@@ -418,23 +418,22 @@ def vendors_active(slug: str):
 
 class BillsBody(BaseModel):
     vendor_id: str
-    period_start: str
-    period_end: str
+    period_start: str | None = None
+    period_end: str | None = None
 
 
 @app.post("/clients/{slug}/bills", dependencies=[Depends(require_api_key)])
 def fetch_bills(slug: str, body: BillsBody):
     log.info(
         f"[BILLS] fetch slug={slug} vendor_id={body.vendor_id} "
-        f"period={body.period_start}..{body.period_end}"
+        f"period={body.period_start or 'open'}..{body.period_end or 'open'}"
     )
-    query = (
-        f"SELECT * FROM Bill "
-        f"WHERE VendorRef = '{body.vendor_id}' "
-        f"AND TxnDate >= '{body.period_start}' "
-        f"AND TxnDate <= '{body.period_end}' "
-        f"MAXRESULTS 1000"
-    )
+    where = [f"VendorRef = '{body.vendor_id}'"]
+    if body.period_start:
+        where.append(f"TxnDate >= '{body.period_start}'")
+    if body.period_end:
+        where.append(f"TxnDate <= '{body.period_end}'")
+    query = "SELECT * FROM Bill WHERE " + " AND ".join(where) + " MAXRESULTS 1000"
     res = qbo_query(fresh_client(slug), query)
     bills = res.get("QueryResponse", {}).get("Bill", [])
     log.info(f"[BILLS] count={len(bills)}")
