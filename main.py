@@ -399,13 +399,22 @@ def vendors_active(slug: str):
     """Returns vendors with open balance > 0, sorted by balance descending.
     This is the live AP universe — vendors we currently owe."""
     log.info(f"[VENDORS-ACTIVE] slug={slug}")
-    # QBO Vendor entity only supports =, !=, between, contains, in, like on Balance.
-    # No >, <, etc. So fetch != 0 then filter positives in Python.
-    query = "SELECT * FROM Vendor WHERE Balance != 0 MAXRESULTS 1000"
-    res = qbo_query(fresh_client(slug), query)
-    vendors = res.get("QueryResponse", {}).get("Vendor", [])
-    # Keep only positive balances (we owe them) and sort desc
-    vendors = [v for v in vendors if float(v.get("Balance") or 0) > 0]
+    # QBO Vendor query language doesn't support range/!=  operators on numeric Balance
+    # (only on boolean fields). Fetch all vendors, paginate, filter to Balance > 0 in Python.
+    client = fresh_client(slug)
+    all_vendors: list[dict] = []
+    page_size = 1000
+    start = 1
+    while True:
+        query = f"SELECT * FROM Vendor STARTPOSITION {start} MAXRESULTS {page_size}"
+        res = qbo_query(client, query)
+        batch = res.get("QueryResponse", {}).get("Vendor", [])
+        all_vendors.extend(batch)
+        if len(batch) < page_size:
+            break
+        start += page_size
+    log.info(f"[VENDORS-ACTIVE] fetched {len(all_vendors)} total vendors")
+    vendors = [v for v in all_vendors if float(v.get("Balance") or 0) > 0]
     vendors.sort(key=lambda v: float(v.get("Balance") or 0), reverse=True)
     log.info(f"[VENDORS-ACTIVE] count={len(vendors)}")
     return {
