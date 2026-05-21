@@ -381,8 +381,10 @@ class VendorLookupBody(BaseModel):
 @app.post("/clients/{slug}/vendor-lookup", dependencies=[Depends(require_api_key)])
 def vendor_lookup(slug: str, body: VendorLookupBody):
     log.info(f"[VENDOR] lookup slug={slug} display_name={body.display_name!r}")
-    # QBO's query language escapes single quotes by doubling them, not backslash.
-    name = body.display_name.split("(")[0].strip().replace("'", "''")
+    # QBO's query language has no working escape for apostrophes inside string
+    # literals — neither \' nor '' parses correctly. Replace apostrophes with %
+    # (LIKE wildcard) so "The Chefs' Warehouse" still matches.
+    name = body.display_name.split("(")[0].strip().replace("'", "%")
     query = f"SELECT * FROM Vendor WHERE DisplayName LIKE '%{name}%'"
     res = qbo_query(fresh_client(slug), query)
     vendors = res.get("QueryResponse", {}).get("Vendor", [])
