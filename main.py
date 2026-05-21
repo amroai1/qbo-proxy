@@ -394,6 +394,28 @@ def vendor_lookup(slug: str, body: VendorLookupBody):
     return {"vendors": vendors, "match_count": len(vendors)}
 
 
+@app.get("/clients/{slug}/vendors-active", dependencies=[Depends(require_api_key)])
+def vendors_active(slug: str):
+    """Returns vendors with open balance > 0, sorted by balance descending.
+    This is the live AP universe — vendors we currently owe."""
+    log.info(f"[VENDORS-ACTIVE] slug={slug}")
+    query = "SELECT * FROM Vendor WHERE Active = true AND Balance > '0' ORDERBY Balance DESC MAXRESULTS 1000"
+    res = qbo_query(fresh_client(slug), query)
+    vendors = res.get("QueryResponse", {}).get("Vendor", [])
+    log.info(f"[VENDORS-ACTIVE] count={len(vendors)}")
+    return {
+        "count": len(vendors),
+        "vendors": [
+            {
+                "Id": v.get("Id"),
+                "DisplayName": v.get("DisplayName"),
+                "Balance": v.get("Balance"),
+            }
+            for v in vendors
+        ],
+    }
+
+
 class BillsBody(BaseModel):
     vendor_id: str
     period_start: str
