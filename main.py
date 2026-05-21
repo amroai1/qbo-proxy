@@ -156,7 +156,34 @@ def require_api_key(x_api_key: str | None = Header(default=None)):
 # ---------- Public endpoints ----------
 @app.get("/health")
 def health():
-    return {"ok": True, "qbo_env": QBO_ENV}
+    return {
+        "ok": True,
+        "qbo_env": QBO_ENV,
+        "qbo_api_base": QBO_API_BASE,
+        "client_id_prefix": CLIENT_ID[:12] + "...",
+        "base_url": BASE_URL,
+    }
+
+
+@app.get("/debug/{slug}", dependencies=[Depends(require_api_key)])
+def debug_client(slug: str):
+    """Hits QBO's CompanyInfo endpoint — the simplest possible authenticated call.
+    Returns the raw response so we can see exactly what Intuit says."""
+    client = fresh_client(slug)
+    url = f"{QBO_API_BASE}/v3/company/{client['realm_id']}/companyinfo/{client['realm_id']}"
+    headers = {
+        "Authorization": f"Bearer {client['access_token']}",
+        "Accept": "application/json",
+    }
+    r = httpx.get(url, params={"minorversion": MINOR_VERSION}, headers=headers, timeout=30)
+    return {
+        "qbo_api_base": QBO_API_BASE,
+        "realm_id": client["realm_id"],
+        "token_expires_at": client["expires_at"].isoformat(),
+        "access_token_prefix": client["access_token"][:20] + "...",
+        "qbo_status": r.status_code,
+        "qbo_body": r.text,
+    }
 
 
 @app.get("/oauth/start")
