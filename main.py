@@ -453,3 +453,43 @@ def fetch_bills(slug: str, body: BillsBody):
     bills = res.get("QueryResponse", {}).get("Bill", [])
     log.info(f"[BILLS] count={len(bills)}")
     return {"bills": bills, "count": len(bills)}
+
+
+class VendorCreditsBody(BaseModel):
+    vendor_id: str
+    period_start: str | None = None
+    period_end: str | None = None
+
+
+@app.post("/clients/{slug}/vendor-credits", dependencies=[Depends(require_api_key)])
+def fetch_vendor_credits(slug: str, body: VendorCreditsBody):
+    """Vendor credits (credit memos) for a vendor. Same request shape as /bills.
+    Amounts are returned negative so credits net against bills."""
+    log.info(
+        f"[CREDITS] fetch slug={slug} vendor_id={body.vendor_id} "
+        f"period={body.period_start or 'open'}..{body.period_end or 'open'}"
+    )
+    where = [f"VendorRef = '{body.vendor_id}'"]
+    if body.period_start:
+        where.append(f"TxnDate >= '{body.period_start}'")
+    if body.period_end:
+        where.append(f"TxnDate <= '{body.period_end}'")
+    query = "SELECT * FROM VendorCredit WHERE " + " AND ".join(where) + " MAXRESULTS 1000"
+    res = qbo_query(fresh_client(slug), query)
+    credits = res.get("QueryResponse", {}).get("VendorCredit", [])
+    log.info(f"[CREDITS] count={len(credits)}")
+    return {
+        "credits": [
+            {
+                "id": c.get("Id"),
+                "type": "vendorcredit",
+                "number": c.get("DocNumber", ""),
+                "date": c.get("TxnDate", ""),
+                # negative so credits net against bills, matching vendor statements
+                "amount": -abs(float(c.get("TotalAmt", 0))),
+                "balance": -abs(float(c.get("Balance", 0))),
+                "memo": c.get("PrivateNote", ""),
+            }
+            for c in credits
+        ]
+    }
